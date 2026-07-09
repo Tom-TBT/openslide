@@ -164,6 +164,32 @@ struct ngr_level {
   int32_t column_width;
 };
 
+static int jpeg_dump_counter = 0;
+
+static void
+dump_jpeg_stream(const char *prefix,
+                 const uint8_t *data,
+                 size_t size,
+                 int index)
+{
+    char filename[256];
+
+    snprintf(filename,
+             sizeof(filename),
+             "tmp/%s_%06d.jpg",
+             prefix,
+             index);
+
+    FILE *f = fopen(filename, "wb");
+
+    if (!f) {
+        return;
+    }
+
+    fwrite(data, 1, size, f);
+    fclose(f);
+}
+
 /*
  * Source manager for reading a run of MCUs between two restart markers
  * as a complete JPEG.  Originally based on jdatasrc.c from IJG libjpeg.
@@ -175,6 +201,8 @@ static bool jpeg_random_access_src(j_decompress_ptr cinfo,
                                    int64_t header_length,
                                    int64_t start_position,
                                    int64_t stop_position,
+                                   int32_t width,
+                                   int32_t height,
                                    GError **err) {
   // check for problems
   if ((0 >= header_sof_offset) ||
@@ -246,8 +274,26 @@ static bool jpeg_random_access_src(j_decompress_ptr cinfo,
     buffer[size_offset + 3] = JPEG_MAX_DIMENSION_LOW;
   }
 
+  if(start_position != -1) {
+    buffer[size_offset + 0] = (height >> 8) & 0xFF;
+    buffer[size_offset + 1] = height & 0xFF;
+    buffer[size_offset + 2] = (width >> 8) & 0xFF;
+    buffer[size_offset + 3] = width & 0xFF;
+    dump_jpeg_stream(
+        "openslide_ndpi",
+        buffer,
+        buffer_size,
+        jpeg_dump_counter++
+    );
+  }
+
   // pass the buffer off to mem_src
   jpeg_mem_src(cinfo, buffer, buffer_size);
+
+  // for (int i = 0; i < buffer_size; i++) {
+  //   printf("%02X", buffer[i]);
+  // }
+  // printf("\n");
 
   return true;
 }
@@ -619,6 +665,8 @@ static bool read_from_jpeg(openslide_t *osr,
                                 jpeg->header_length,
                                 start_position,
                                 stop_position,
+                                jpeg->tile_width,
+                                jpeg->tile_height,
                                 err)) {
       return false;
     }
@@ -1008,7 +1056,7 @@ static bool validate_jpeg_header(struct _openslide_file *f,
     _openslide_jpeg_decompress_init(dc, &env);
     if (!jpeg_random_access_src(cinfo, f,
                                 *header_data, *header_sof_offset,
-                                *header_length, -1, -1, err)) {
+                                *header_length, -1, -1, -1, -1, err)) {
       return false;
     }
 
