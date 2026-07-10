@@ -816,7 +816,7 @@ static bool add_level_file(openslide_t *osr,
     l->grid = _openslide_grid_create_simple(osr,
                                             l->tiles_across, l->tiles_down,
                                             l->base.tile_w, l->base.tile_h,
-                                            read_tile);
+                                            read_tile, NULL);
 
     files = g_ptr_array_new_full(4,
                                  OPENSLIDE_G_DESTROY_NOTIFY_WRAPPER(dicom_file_destroy));

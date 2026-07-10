@@ -486,7 +486,7 @@ static bool aperio_open(openslide_t *osr,
                                               tiffl->tiles_down,
                                               tiffl->tile_w,
                                               tiffl->tile_h,
-                                              read_tile);
+                                              read_tile, NULL);
 
       // get compression
       if (!TIFFGetField(ct.tiff, TIFFTAG_COMPRESSION, &l->compression)) {

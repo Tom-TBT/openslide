@@ -892,7 +892,7 @@ static bool ventana_open(openslide_t *osr, const char *filename,
                                                 tiffl->tiles_down,
                                                 tiffl->tile_w,
                                                 tiffl->tile_h,
-                                                read_subtile);
+                                                read_subtile, NULL);
         l->subtiles_per_tile = 1;
       }
       //g_debug("level %"PRId64": magnification %g, downsample %g, size %"PRId64" %"PRId64, level, magnification, downsample, l->base.w, l->base.h);

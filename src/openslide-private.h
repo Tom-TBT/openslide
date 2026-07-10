@@ -106,6 +106,11 @@ struct _openslide_ops {
   // must fail if osr->icc_profile_size doesn't match the profile
   bool (*read_icc_profile)(openslide_t *osr, void *dest, GError **err);
   void (*destroy)(openslide_t *osr);
+  bool (*write_tile)(openslide_t *osr,
+                      struct _openslide_level *level,
+                      int64_t x, int64_t y,
+                      int32_t w, int32_t h,
+                      GError **err);
 };
 
 struct _openslide_tifflike;
@@ -253,6 +258,12 @@ typedef bool (*_openslide_grid_simple_read_fn)(openslide_t *osr,
                                                void *arg,
                                                GError **err);
 
+typedef bool (*_openslide_grid_simple_write_fn)(openslide_t *osr,
+                                               struct _openslide_level *level,
+                                               int64_t tile_col, int64_t tile_row,
+                                               void *arg,
+                                               GError **err);
+
 typedef bool (*_openslide_grid_tilemap_read_fn)(openslide_t *osr,
                                                 cairo_t *cr,
                                                 struct _openslide_level *level,
@@ -274,7 +285,8 @@ struct _openslide_grid *_openslide_grid_create_simple(openslide_t *osr,
                                                       int64_t tiles_down,
                                                       int32_t tile_w,
                                                       int32_t tile_h,
-                                                      _openslide_grid_simple_read_fn read_tile);
+                                                      _openslide_grid_simple_read_fn read_tile,
+                                                      _openslide_grid_simple_write_fn write_tile);
 
 void _openslide_grid_simple_set_missing(struct _openslide_grid *grid,
                                         int64_t tile_col, int64_t tile_row);

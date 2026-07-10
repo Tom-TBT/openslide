@@ -696,6 +696,59 @@ static bool read_from_jpeg(openslide_t *osr,
   }
 }
 
+static bool jpeg_write_tile(openslide_t *osr,
+                           struct _openslide_level *level,
+                           int64_t tile_col, int64_t tile_row,
+                           void *arg G_GNUC_UNUSED,
+                           GError **err) {
+  struct jpeg_level *l = (struct jpeg_level *) level;
+
+  int32_t jpeg_col = tile_col / l->jpegs[0]->tiles_across;
+  int32_t jpeg_row = tile_row / l->jpegs[0]->tiles_down;
+  int32_t local_tile_col = tile_col % l->jpegs[0]->tiles_across;
+  int32_t local_tile_row = tile_row % l->jpegs[0]->tiles_down;
+
+  // grid should ensure tile col/row are in bounds
+  g_assert(jpeg_col >= 0 && jpeg_col < l->jpegs_across);
+  g_assert(jpeg_row >= 0 && jpeg_row < l->jpegs_down);
+
+  struct jpeg *jp = l->jpegs[jpeg_row * l->jpegs_across + jpeg_col];
+  int32_t tileno = local_tile_row * jp->tiles_across + local_tile_col;
+
+  int32_t tw = l->tile_width;
+  int32_t th = l->tile_height;
+
+  //g_debug("hamamatsu read_tile: jpeg %d %d, local %d %d, tile %d, dim %d %d", jpeg_col, jpeg_row, local_tile_col, local_tile_row, tileno, tw, th);
+
+  // get the jpeg data, possibly from cache
+  g_autoptr(_openslide_cache_entry) cache_entry = NULL;
+  uint32_t *tiledata = _openslide_cache_get(osr->cache,
+                                            level, tile_col, tile_row,
+                                            &cache_entry);
+
+  if (!tiledata) {
+    g_autofree uint32_t *buf = g_new(uint32_t, tw * th);
+    if (!read_from_jpeg(osr,
+                        jp, tileno,
+                        l->scale_denom,
+                        buf, tw, th, tile_col, tile_row,
+                        err)) {
+      return false;
+    }
+
+    tiledata = g_steal_pointer(&buf);
+    _openslide_cache_put(osr->cache,
+			 level, tile_col, tile_row,
+			 tiledata,
+			 tw * th * 4,
+			 &cache_entry);
+  }
+
+  printf("That's where I have the tile data\n");
+
+  return true;
+}
+
 static bool read_jpeg_tile(openslide_t *osr,
                            cairo_t *cr,
                            struct _openslide_level *level,
@@ -847,6 +900,7 @@ static void jpeg_do_destroy(openslide_t *osr) {
 static const struct _openslide_ops hamamatsu_jpeg_ops = {
   .paint_region = jpeg_paint_region,
   .destroy = jpeg_do_destroy,
+  .write_tile = jpeg_write_tile
 };
 
 static bool hamamatsu_vms_vmu_detect(const char *filename,
@@ -1287,7 +1341,7 @@ static void create_scaled_jpeg_levels(openslide_t *osr,
                                                  sd_l->tiles_down,
                                                  sd_l->tile_width,
                                                  sd_l->tile_height,
-                                                 read_jpeg_tile);
+                                                 read_jpeg_tile, jpeg_write_tile);
 
       key = g_new(int64_t, 1);
       *key = sd_l->base.w;
@@ -1432,7 +1486,7 @@ static struct jpeg_level *create_jpeg_level(openslide_t *osr,
   l->grid = _openslide_grid_create_simple(osr,
                                           l->tiles_across, l->tiles_down,
                                           l->tile_width, l->tile_height,
-                                          read_jpeg_tile);
+                                          read_jpeg_tile, jpeg_write_tile);
 
   return l;
 }
@@ -1753,7 +1807,7 @@ static bool hamamatsu_vmu_part2(openslide_t *osr,
                                             / NGR_TILE_HEIGHT,
                                             l->column_width,
                                             NGR_TILE_HEIGHT,
-                                            ngr_read_tile);
+                                            ngr_read_tile, NULL);
 
     // tile size hints
     l->base.tile_w = l->column_width;

@@ -671,7 +671,7 @@ static bool create_levels_from_collection(openslide_t *osr,
                                                  tiffl->tiles_down,
                                                  tiffl->tile_w,
                                                  tiffl->tile_h,
-                                                 read_tile);
+                                                 read_tile, NULL);
     }
 
     // set quickhash directory in legacy mode

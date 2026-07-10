@@ -5,6 +5,7 @@ if meson.version().version_compare('>=0.61') and host_machine.system() != 'windo
     'openslide-quickhash1sum',
     'openslide-show-properties',
     'openslide-write-png',
+    'openslide-write-tiles',
   ]
   foreach target : symlink_targets
     install_symlink(
@@ -19,6 +20,7 @@ else
     'openslide-quickhash1sum',
     'openslide-show-properties',
     'openslide-write-png',
+    'openslide-write-tiles',
     'slidetool',
   ]
 endif
@@ -47,6 +49,7 @@ mans = [
   'openslide-quickhash1sum',
   'openslide-show-properties',
   'openslide-write-png',
+  'openslide-write-tiles',
   'slidetool',
 ]
 foreach m : mans

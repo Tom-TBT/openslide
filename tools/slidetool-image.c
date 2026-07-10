@@ -222,6 +222,58 @@ static int do_write_png(int narg, char **args) {
   return write_region_png(slide, x, y, level, width, height, output);
 }
 
+static void write_all_tiles(openslide_t *osr, FILE *f,
+                      int32_t level,
+                      int32_t w, int32_t h) {
+  printf("all good with the command\n");
+  double ds = openslide_get_level_downsample(osr, level);
+
+  openslide_write_tiles(osr, 0, 0, level, w, h);
+}
+
+static int write_tiles(const char *slide, int32_t level,
+                       int64_t width, int64_t height,
+                       const char *outfile) {
+  // open slide
+  g_autoptr(openslide_t) osr = openslide_open(slide);
+
+  // check errors
+  common_fail_on_error(osr, "%s", slide);
+
+  // validate args
+  ENSURE_NONNEG(level);
+  if (level > openslide_get_level_count(osr) - 1) {
+    common_fail("level %d out of range (level count %d)",
+                level, openslide_get_level_count(osr));
+  }
+  ENSURE_POS(width);
+  ENSURE_POS(height);
+  if (width > INT16_MAX) {
+    common_fail("width must be <= %d", INT16_MAX);
+  }
+  if (height > INT16_MAX) {
+    common_fail("height must be <= %d", INT16_MAX);
+  }
+
+  // write output file
+  g_auto(output) out = open_output(outfile);
+  write_all_tiles(osr, out.fp, level, width, height);
+
+  return 0;
+}
+
+static int do_write_tiles(int narg, char **args) {
+  // get args
+  g_assert(narg == 5);
+  const char *slide = args[0];
+  int32_t level = g_ascii_strtoll(args[1], NULL, 10);
+  int64_t width = g_ascii_strtoll(args[2], NULL, 10);
+  int64_t height = g_ascii_strtoll(args[3], NULL, 10);
+  const char *output = args[4];
+
+  return write_tiles(slide, level, width, height, output);
+}
+
 static int do_region_read(int narg, char **args) {
   // get args
   g_assert(narg >= 6);
@@ -343,6 +395,15 @@ const struct command write_png_cmd = {
   .min_positional = 7,
   .max_positional = 7,
   .handler = do_write_png,
+};
+
+const struct command write_tiles_cmd = {
+  .parameter_string = "<SLIDE> <LEVEL> <WIDTH> <HEIGHT> <OUTPUT-DIR>",
+  .description = "Output the tiles of a virtual slide to a directory in their original encoding format (jpeg for NDPI, jpeg-2000 for SVS, etc.).",
+  .options = legacy_opts,
+  .min_positional = 5,
+  .max_positional = 5,
+  .handler = do_write_tiles,
 };
 
 static const struct command region_subcmds[] = {
