@@ -120,6 +120,30 @@ static bool render_missing_tile(struct level *l,
   return _openslide_check_cairo_status(cr, err);
 }
 
+#include <inttypes.h>
+static void
+dump_j2k_stream(const char *subfolder,
+                 const uint8_t *data,
+                 size_t size,
+                 int64_t tile_col, int64_t tile_row)
+{
+    char filename[256];
+
+    snprintf(filename,
+             sizeof(filename),
+             "0_0/%"PRId64"_%"PRId64".j2k",
+             tile_col, tile_row);
+
+    FILE *f = fopen(filename, "wb");
+
+    if (!f) {
+        return;
+    }
+
+    fwrite(data, 1, size, f);
+    fclose(f);
+}
+
 static bool decode_tile(struct level *l,
                         TIFF *tiff,
                         uint32_t *dest,
@@ -160,6 +184,8 @@ static bool decode_tile(struct level *l,
                                       err)) {
     return false;
   }
+
+  dump_j2k_stream("0_0", buf, buflen, tile_col, tile_row);
 
   // decompress
   return _openslide_jp2k_decode_buffer(dest,
