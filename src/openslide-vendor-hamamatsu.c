@@ -47,6 +47,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
+#include <inttypes.h>
 
 #include <jpeglib.h>
 #include <tiff.h>
@@ -164,21 +165,18 @@ struct ngr_level {
   int32_t column_width;
 };
 
-static int jpeg_dump_counter = 0;
-
 static void
-dump_jpeg_stream(const char *prefix,
+dump_jpeg_stream(const char *subfolder,
                  const uint8_t *data,
                  size_t size,
-                 int index)
+                 int64_t tile_col, int64_t tile_row)
 {
     char filename[256];
 
     snprintf(filename,
              sizeof(filename),
-             "tmp/%s_%06d.jpg",
-             prefix,
-             index);
+             "0_0/%"PRId64"_%"PRId64".jpg",
+             tile_row, tile_col);
 
     FILE *f = fopen(filename, "wb");
 
@@ -203,6 +201,7 @@ static bool jpeg_random_access_src(j_decompress_ptr cinfo,
                                    int64_t stop_position,
                                    int32_t width,
                                    int32_t height,
+                                   int64_t tile_col, int64_t tile_row,
                                    GError **err) {
   // check for problems
   if ((0 >= header_sof_offset) ||
@@ -279,13 +278,16 @@ static bool jpeg_random_access_src(j_decompress_ptr cinfo,
     buffer[size_offset + 1] = height & 0xFF;
     buffer[size_offset + 2] = (width >> 8) & 0xFF;
     buffer[size_offset + 3] = width & 0xFF;
+
     dump_jpeg_stream(
-        "openslide_ndpi",
+        "0_0",
         buffer,
         buffer_size,
-        jpeg_dump_counter++
+        tile_col, tile_row
     );
   }
+
+
 
   // pass the buffer off to mem_src
   jpeg_mem_src(cinfo, buffer, buffer_size);
@@ -633,6 +635,7 @@ static bool read_from_jpeg(openslide_t *osr,
                            int32_t scale_denom,
                            uint32_t *dest,
                            int32_t w, int32_t h,
+                           int64_t tile_col, int64_t tile_row,
                            GError **err) {
   // open file
   g_autoptr(_openslide_file) f = _openslide_fopen(jpeg->filename, err);
@@ -667,6 +670,7 @@ static bool read_from_jpeg(openslide_t *osr,
                                 stop_position,
                                 jpeg->tile_width,
                                 jpeg->tile_height,
+                                tile_col, tile_row,
                                 err)) {
       return false;
     }
@@ -728,7 +732,7 @@ static bool read_jpeg_tile(openslide_t *osr,
     if (!read_from_jpeg(osr,
                         jp, tileno,
                         l->scale_denom,
-                        buf, tw, th,
+                        buf, tw, th, tile_col, tile_row,
                         err)) {
       return false;
     }
@@ -1056,7 +1060,7 @@ static bool validate_jpeg_header(struct _openslide_file *f,
     _openslide_jpeg_decompress_init(dc, &env);
     if (!jpeg_random_access_src(cinfo, f,
                                 *header_data, *header_sof_offset,
-                                *header_length, -1, -1, -1, -1, err)) {
+                                *header_length, -1, -1, -1, -1, -1, -1, err)) {
       return false;
     }
 
