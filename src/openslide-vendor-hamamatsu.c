@@ -722,30 +722,34 @@ static bool jpeg_write_tiles(openslide_t *osr,
     printf("n_x: %d, n_y: %d, tiles_per_patch: %d\n", n_x, n_y, tiles_per_patch);
 
   bool success = false;
+  g_autoptr(_openslide_file) infile = _openslide_fopen(jpeg->filename, err);
+  if (!infile) {
+    goto cleanup;
+  }
+
 
   // Process each patch
-  for (int32_t i = 0; i < jpeg->tiles_across / n_x; i++) {
+  for (int32_t i = 0; i * l->tile_width < i * jpeg->tiles_across / n_x; i++) {
     for (int32_t j = 0; j < jpeg->tiles_down / n_y; j++) {
       int64_t total_data_size = 0;
-      int restart_marker_count = 0;
+      JOCTET *full_buffer = NULL;
       JOCTET **tile_buffers = g_new(JOCTET *, tiles_per_patch);
       int64_t *tile_sizes = g_new(int64_t, tiles_per_patch);
 
       // ===== PHASE 1: Read all tiles for this patch =====
       for (int32_t n = 0; n < n_y; n++) {
         for (int32_t m = 0; m < n_x; m++) {
-          const int inner_index = m * n_y + n;
+          const int inner_index = n * n_x + m;
           const int32_t jpeg_col = i * n_x + m;
           const int32_t jpeg_row = j * n_y + n;
           const int32_t tileno = jpeg_col + jpeg_row * jpeg->tiles_across;
 
-          // Open file and setup decompression
-          g_autoptr(_openslide_file) infile = _openslide_fopen(jpeg->filename, err);
-          if (!infile) {
-            goto cleanup;
-          }
+          //printf("Reading tile: col=%d, row=%d, tileno=%d inner_index=%d\n", jpeg_col, jpeg_row, tileno, inner_index);
 
-          struct jpeg_decompress_struct *cinfo;
+          // Open file and setup decompression
+
+
+          /*struct jpeg_decompress_struct *cinfo;
           g_auto(_openslide_jpeg_decompress) dc = _openslide_jpeg_decompress_create(&cinfo);
           jmp_buf env;
 
@@ -755,7 +759,7 @@ static bool jpeg_write_tiles(openslide_t *osr,
           }
 
           _openslide_jpeg_decompress_init(dc, &env);
-
+          */
           int64_t start_pos, stop_pos;
           if (!compute_mcu_start(osr, jpeg, infile, tileno, &start_pos, &stop_pos, err)) {
             goto cleanup;
@@ -785,8 +789,6 @@ static bool jpeg_write_tiles(openslide_t *osr,
                          "Expected 0xFF byte at end of JPEG data");
               goto cleanup;
             }
-            tile_buffers[inner_index][data_length - 1] = 0xD0 + restart_marker_count;
-            restart_marker_count = (restart_marker_count + 1) % 8;
           }
         }
       }
@@ -797,40 +799,39 @@ static bool jpeg_write_tiles(openslide_t *osr,
       const uint8_t *const header_data = jpeg->header_data;
 
       // Allocate full buffer with separate decompression context
-      struct jpeg_decompress_struct *cinfo_full;
-      g_auto(_openslide_jpeg_decompress) dc_full = _openslide_jpeg_decompress_create(&cinfo_full);
-      jmp_buf env_full;
+      //struct jpeg_decompress_struct *cinfo_full;
+      //g_auto(_openslide_jpeg_decompress) dc_full = _openslide_jpeg_decompress_create(&cinfo_full);
+      //jmp_buf env_full;
 
-      JOCTET *full_buffer = NULL;
-      if (setjmp(env_full) == 0) {
-        _openslide_jpeg_decompress_init(dc_full, &env_full);
-        full_buffer = (*cinfo_full->mem->alloc_large)((j_common_ptr)cinfo_full, JPOOL_IMAGE, full_size);
+      //_openslide_jpeg_decompress_init(dc_full, &env_full);
+      full_buffer = g_malloc(full_size);//(*cinfo_full->mem->alloc_large)((j_common_ptr)cinfo_full, JPOOL_IMAGE, full_size);
 
-        // Copy header
-        memcpy(full_buffer, header_data, header_length);
+      // Copy header
+      memcpy(full_buffer, header_data, header_length);
 
-        // Concatenate all tile data
-        int64_t offset = header_length;
-        for (int p = 0; p < tiles_per_patch; p++) {
-          if (tile_sizes[p] > 0) {
-            memcpy(full_buffer + offset, tile_buffers[p], tile_sizes[p]);
-            offset += tile_sizes[p];
-            g_free(tile_buffers[p]);
-          }
+      // Concatenate all tile data
+      int64_t offset = header_length;
+      for (int p = 0; p < tiles_per_patch; p++) {
+        if (tile_sizes[p] > 0) {
+          tile_buffers[p][tile_sizes[p] - 1] = 0xD0 + (p % 8);
+          memcpy(full_buffer + offset, tile_buffers[p], tile_sizes[p]);
+          offset += tile_sizes[p];
+          g_free(tile_buffers[p]);
         }
-
-        // Update SOF dimensions to 2048x2048
-        const int64_t sof_offset = jpeg->header_sof_offset + 5;
-        full_buffer[sof_offset + 0] = (4096 >> 8) & 0xFF;
-        full_buffer[sof_offset + 1] = 4096 & 0xFF;
-        full_buffer[sof_offset + 2] = (4096 >> 8) & 0xFF;
-        full_buffer[sof_offset + 3] = 4096 & 0xFF;
-
-        // Add EOI marker
-        full_buffer[full_size - 1] = JPEG_EOI;
-
-        dump_jpeg_stream("patch", full_buffer, full_size, i, j);
       }
+
+      // Update SOF dimensions to 2048x2048
+      const int64_t sof_offset = jpeg->header_sof_offset + 5;
+      full_buffer[sof_offset + 0] = (width >> 8) & 0xFF;
+      full_buffer[sof_offset + 1] = width & 0xFF;
+      full_buffer[sof_offset + 2] = (height >> 8) & 0xFF;
+      full_buffer[sof_offset + 3] = height & 0xFF;
+
+      // Add EOI marker
+      full_buffer[full_size - 1] = JPEG_EOI;
+
+      dump_jpeg_stream("patch", full_buffer, full_size, i, j);
+      g_free(full_buffer);
       // Tile buffers are automatically freed by jpeg memory manager
       // when their decompression contexts go out of scope
     }
@@ -841,7 +842,7 @@ static bool jpeg_write_tiles(openslide_t *osr,
 
 cleanup:
   //g_free(tile_buffers);
-  //g_free(tile_sizes);
+  //g_free(full_buffer);
   return success;
 }
 /*static bool jpeg_write_tiles(openslide_t *osr,
