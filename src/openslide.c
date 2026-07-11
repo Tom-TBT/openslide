@@ -565,25 +565,11 @@ void openslide_read_region(openslide_t *osr,
 }
 
 void openslide_write_tiles(openslide_t *osr,
-			  int64_t x, int64_t y,
 			  int32_t level,
 			  int64_t w, int64_t h) {
-  if (w < 0 || h < 0) {
-    GError *tmp_err = g_error_new(OPENSLIDE_ERROR, OPENSLIDE_ERROR_FAILED,
-                                  "negative width (%"PRId64") "
-                                  "or negative height (%"PRId64") "
-                                  "not allowed", w, h);
-    _openslide_propagate_error(osr, tmp_err);
-    return;
-  }
-
-  // now that it's cleared, return if an error occurred
-  if (openslide_get_error(osr)) {
-    return;
-  }
 
   GError *tmp_err = NULL;
-  osr->ops->write_tile(osr, osr->levels[level], x, y, w, h, tmp_err);
+  osr->ops->write_tiles(osr, osr->levels[level], w, h, tmp_err);
 
 }
 

@@ -106,9 +106,8 @@ struct _openslide_ops {
   // must fail if osr->icc_profile_size doesn't match the profile
   bool (*read_icc_profile)(openslide_t *osr, void *dest, GError **err);
   void (*destroy)(openslide_t *osr);
-  bool (*write_tile)(openslide_t *osr,
+  bool (*write_tiles)(openslide_t *osr,
                       struct _openslide_level *level,
-                      int64_t x, int64_t y,
                       int32_t w, int32_t h,
                       GError **err);
 };

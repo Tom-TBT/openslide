@@ -202,7 +202,6 @@ void openslide_read_region(openslide_t *osr,
 
 OPENSLIDE_PUBLIC()
 void openslide_write_tiles(openslide_t *osr,
-			  int64_t x, int64_t y,
 			  int32_t level,
 			  int64_t w, int64_t h);
 

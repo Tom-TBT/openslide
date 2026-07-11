@@ -228,7 +228,7 @@ static void write_all_tiles(openslide_t *osr, FILE *f,
   printf("all good with the command\n");
   double ds = openslide_get_level_downsample(osr, level);
 
-  openslide_write_tiles(osr, 0, 0, level, w, h);
+  openslide_write_tiles(osr, level, w, h);
 }
 
 static int write_tiles(const char *slide, int32_t level,
