@@ -825,27 +825,33 @@ cleanup:
 }*/
 static bool jpeg_write_tiles(openslide_t *osr,
                            struct _openslide_level *level,
-                           int64_t width, int64_t height,
+                           int64_t req_width, int64_t req_height,
                            void *arg G_GNUC_UNUSED,
                            GError **err)
 {
   struct jpeg_level *l = (struct jpeg_level *)level;
-
-  const int32_t tw = l->tile_width;
-  const int32_t th = l->tile_height;
-  const int32_t n_segment_y = height / th > 0 ? height / th : 1;
-  const int32_t n_segment_x = width / tw > 0 ? width / tw : 1;
-
-
   struct jpeg *jpeg = l->jpegs[0];
-  width = tw * n_segment_x;
-  height = th * n_segment_y;
-  const int32_t last_tile_height = jpeg->height % (height) > 0 ? jpeg->height % (height) : th;
-  const int32_t last_tile_width = jpeg->width % (width) > 0 ? jpeg->width % (width) : tw;
   const int64_t sof_offset = jpeg->header_sof_offset + 5;
+  const int32_t jpeg_width = jpeg->width / l->scale_denom;
+  const int32_t jpeg_height = jpeg->height / l->scale_denom;
 
-  printf("n_segment_x: %d  n_segment_y: %d\n", n_segment_x, n_segment_y);
-  printf("last_tile_width: %d  last_tile_height: %d\n", last_tile_width, last_tile_height);
+  const int32_t seg_w = l->tile_width;
+  const int32_t seg_h = l->tile_height;
+  const int32_t n_seg_y = req_height / seg_h > 0 ? req_height / seg_h : 1;
+  const int32_t n_seg_x = req_width / seg_w > 0 ? req_width / seg_w : 1;
+  const int32_t tile_width = seg_w * n_seg_x;
+  const int32_t tile_height = seg_h * n_seg_y;
+  const int32_t last_tile_height = jpeg_height % (tile_height) > 0 ? jpeg_height % (tile_height) : seg_h;
+  const int32_t last_tile_width = jpeg_width % (tile_width) > 0 ? jpeg_width % (tile_width) : seg_w;
+
+  // Buffer for a single strip: tiles_across wide, n_y tall
+  const int32_t segments_in_batch = jpeg->tiles_across * n_seg_y;
+  int32_t batch_size = jpeg->tiles_across / n_seg_x;
+  batch_size += (jpeg->tiles_across % n_seg_x) ? 1 : 0;
+
+  printf("Requested size: %dx%d, actual size: %dx%d from segments of size %dx%d\n", req_width, req_height, tile_width, tile_height, seg_w, seg_h);
+  printf("Splitting %dx%d image into tiles of size %dx%d, with %d segments per batch and %d batches\n",
+         jpeg_width, jpeg_height, tile_width, tile_height, segments_in_batch, batch_size);
 
   bool success = false;
   g_autoptr(_openslide_file) infile = _openslide_fopen(jpeg->filename, err);
@@ -853,96 +859,97 @@ static bool jpeg_write_tiles(openslide_t *osr,
     goto cleanup;
   }
 
-  // Buffer for a single strip: tiles_across wide, n_y tall
-  int32_t segments_in_batch = jpeg->tiles_across * n_segment_y;
-  int32_t batch_size = jpeg->tiles_across / n_segment_x;
-  batch_size += (jpeg->tiles_across % n_segment_x) ? 1 : 0;
-  JOCTET **strip_buf = g_new0(JOCTET *, segments_in_batch);  // Zero-initialized
-  int64_t *strip_size = g_new0(int64_t, segments_in_batch);  // Zero-initialized
+  JOCTET **jpeg_fragment_buf = g_new0(JOCTET *, segments_in_batch);  // Zero-initialized
+  int64_t *jpeg_fragment_sizes = g_new0(int64_t, segments_in_batch);  // Zero-initialized
+
   JOCTET **tile_buf = g_new0(JOCTET *, batch_size);  // Zero-initialized
   int64_t *tile_size = g_new0(int64_t, batch_size);  // Zero-initialized
   int64_t *tile_size_cursor = g_new0(int64_t, batch_size);  // Zero-initialized
-  int64_t *tile_cursor_restart = g_new0(int64_t, batch_size);
+  int64_t *tile_restart_cursor = g_new0(int64_t, batch_size);
+
+  int64_t tile_idx;
 
   printf("tile per strip: %d, batch_size: %d\n", segments_in_batch, batch_size);
 
   for (int32_t tileno = 0; tileno < jpeg->tile_count; tileno++) {
-    // Load tile
     int64_t start_pos, stop_pos;
     if (!compute_mcu_start(osr, jpeg, infile, tileno, &start_pos, &stop_pos, err)) {
       goto cleanup;
     }
     const int64_t data_length = (start_pos != -1) ? (stop_pos - start_pos) : 0;
-    int curr_batch = tileno % jpeg->tiles_across / n_segment_x;
-    tile_size[curr_batch] += data_length;
+    tile_idx = tileno % jpeg->tiles_across / n_seg_x;
+    tile_size[tile_idx] += data_length;
 
-    int strip_index = tileno % segments_in_batch;
-    strip_buf[strip_index] = g_malloc(data_length);
-    strip_size[strip_index] = data_length;
+    int fragment_idx = tileno % segments_in_batch;
+    jpeg_fragment_buf[fragment_idx] = g_malloc(data_length);
+    jpeg_fragment_sizes[fragment_idx] = data_length;
     if (!_openslide_fseek(infile, start_pos, SEEK_SET, err) ||
-        !_openslide_fread_exact(infile, strip_buf[strip_index], data_length, err)) {
+        !_openslide_fread_exact(infile, jpeg_fragment_buf[fragment_idx], data_length, err)) {
       g_prefix_error(err, "Failed to read tile data at position %" PRId64 ": ", start_pos);
       goto cleanup;
     }
-    if (strip_buf[strip_index][data_length - 2] != 0xFF) {
+    if (jpeg_fragment_buf[fragment_idx][data_length - 2] != 0xFF) {
       g_set_error(err, OPENSLIDE_ERROR, OPENSLIDE_ERROR_FAILED,
                   "Expected 0xFF byte at end of JPEG data for tile %d", tileno);
       goto cleanup;
     }
     const int32_t col = tileno % jpeg->tiles_across;
     const int32_t row = tileno / jpeg->tiles_across;
-    const int32_t strip_row = row % n_segment_y;
-    const int32_t strip_num = row / n_segment_y;
+    const int32_t strip_row = row % n_seg_y;
+    const int32_t strip_num = row / n_seg_y;
 
     // Check if we've completed this strip
-    const bool is_last_tile = (tileno == jpeg->tile_count - 1);
-    const bool is_last_fragment = (tileno % segments_in_batch) == (segments_in_batch - 1);
-    if (is_last_tile || is_last_fragment) {
-
+    const bool is_end_img = (tileno == jpeg->tile_count - 1);
+    const bool is_end_batch = (tileno % segments_in_batch) == (segments_in_batch - 1);
+    if (is_end_img || is_end_batch) {
       // allocate full_buffer for each image we will output
       // set the header for each image
-      for (int batch_idx = 0; batch_idx < batch_size; batch_idx++) {
-        tile_buf[batch_idx] = g_malloc(tile_size[batch_idx] + jpeg->header_length);
-        memcpy(tile_buf[batch_idx], jpeg->header_data, jpeg->header_length);
-        tile_size_cursor[batch_idx] = jpeg->header_length;  // Start after header
+      for (tile_idx = 0; tile_idx < batch_size; tile_idx++) {
+        // Allocate memory for the tile buffer, including space for the header
+        tile_buf[tile_idx] = g_malloc(tile_size[tile_idx] + jpeg->header_length);
 
-        tile_cursor_restart[batch_idx] = 0; // reinitialize restart marker counter for each tile buffer
+        // Copy the header data into the tile buffer
+        memcpy(tile_buf[tile_idx], jpeg->header_data, jpeg->header_length);
+        tile_size_cursor[tile_idx] = jpeg->header_length;  // Start after header
+
+        tile_restart_cursor[tile_idx] = 0; // initialize restart marker counter for each tile buffer
       }
+      for (int i = 0; i < fragment_idx + 1; i++) { // fragment_idx is the last index of the current batch
+        const int32_t (tile_idx) = (i % jpeg->tiles_across) / n_seg_x;
 
+        // Set the restart marker for this tile fragment and increment for the current tile index
+        jpeg_fragment_buf[i][jpeg_fragment_sizes[i] - 1] = 0xD0 + tile_restart_cursor[tile_idx];
+        tile_restart_cursor[tile_idx] = (tile_restart_cursor[tile_idx] + 1) % 8;
 
-      for (int i = 0; i < strip_index + 1; i++) {
-        const int32_t (batch_idx) = (i % jpeg->tiles_across) / n_segment_x;
+        // Set the next tile fragment in the tile buffer for the current tile index
+        memcpy(tile_buf[tile_idx] + tile_size_cursor[tile_idx], jpeg_fragment_buf[i], jpeg_fragment_sizes[i]);
+        tile_size_cursor[tile_idx] += jpeg_fragment_sizes[i];
 
-        strip_buf[i][strip_size[i] - 1] = 0xD0 + tile_cursor_restart[batch_idx];
-        tile_cursor_restart[batch_idx] = (tile_cursor_restart[batch_idx] + 1) % 8;
-
-        memcpy(tile_buf[batch_idx] + tile_size_cursor[batch_idx], strip_buf[i], strip_size[i]);
-        tile_size_cursor[batch_idx] += strip_size[i];
-        g_free(strip_buf[i]);
-        strip_buf[i] = NULL;
+        // release the memory for the jpeg_fragment_buf[i] after copying it to the tile buffer
+        g_free(jpeg_fragment_buf[i]);
+        jpeg_fragment_buf[i] = NULL;
       }
-
-      for (int batch_idx = 0; batch_idx < batch_size; batch_idx++) {
-        int32_t true_width = width;
-        int32_t true_height = height;
-        if (is_last_tile) {
+      for (tile_idx = 0; tile_idx < batch_size; tile_idx++) {
+        int32_t true_width = tile_width;
+        int32_t true_height = tile_height;
+        if (is_end_img) {
           true_height = last_tile_height;
         }
-        if (batch_idx == batch_size - 1) {
+        if (tile_idx == batch_size - 1) {
           true_width = last_tile_width;
         }
 
-        tile_buf[batch_idx][sof_offset + 0] = (true_height >> 8) & 0xFF;
-        tile_buf[batch_idx][sof_offset + 1] = true_height & 0xFF;
-        tile_buf[batch_idx][sof_offset + 2] = (true_width >> 8) & 0xFF;
-        tile_buf[batch_idx][sof_offset + 3] = true_width & 0xFF;
+        tile_buf[tile_idx][sof_offset + 0] = (true_height >> 8) & 0xFF;
+        tile_buf[tile_idx][sof_offset + 1] = true_height & 0xFF;
+        tile_buf[tile_idx][sof_offset + 2] = (true_width >> 8) & 0xFF;
+        tile_buf[tile_idx][sof_offset + 3] = true_width & 0xFF;
 
-        tile_buf[batch_idx][tile_size_cursor[batch_idx] - 1] = JPEG_EOI;
+        tile_buf[tile_idx][tile_size_cursor[tile_idx] - 1] = JPEG_EOI;
 
-        dump_jpeg_stream("patch", tile_buf[batch_idx], tile_size_cursor[batch_idx], batch_idx, strip_num);
-        g_free(tile_buf[batch_idx]);
-        tile_buf[batch_idx] = NULL;
-        tile_size[batch_idx] = 0;
+        dump_jpeg_stream("patch", tile_buf[tile_idx], tile_size_cursor[tile_idx], tile_idx, strip_num);
+        g_free(tile_buf[tile_idx]);
+        tile_buf[tile_idx] = NULL;
+        tile_size[tile_idx] = 0;
       }
     }
   }
@@ -952,16 +959,18 @@ static bool jpeg_write_tiles(openslide_t *osr,
 cleanup:
   printf("DEBUG: Cleanup - freeing remaining strip buffers\n");
   for (int32_t s = 0; s < segments_in_batch; s++) {
-    if (strip_buf[s] != NULL) {
-      printf("DEBUG: Freeing strip_buf[%d] in cleanup\n", s);
-      g_free(strip_buf[s]);
-      strip_buf[s] = NULL;
+    if (jpeg_fragment_buf[s] != NULL) {
+      printf("DEBUG: Freeing jpeg_fragment_buf[%d] in cleanup\n", s);
+      g_free(jpeg_fragment_buf[s]);
+      jpeg_fragment_buf[s] = NULL;
     }
   }
-  g_free(strip_buf);
-  g_free(strip_size);
+  g_free(jpeg_fragment_buf);
+  g_free(jpeg_fragment_sizes);
   g_free(tile_buf);
   g_free(tile_size);
+  g_free(tile_size_cursor);
+  g_free(tile_restart_cursor);
   printf("DEBUG: Function returning %s\n", success ? "true" : "false");
   return success;
 }
