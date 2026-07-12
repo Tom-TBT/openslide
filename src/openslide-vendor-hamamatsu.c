@@ -165,22 +165,55 @@ struct ngr_level {
   int32_t column_width;
 };
 
+
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <inttypes.h>  // Required for PRId64
+
 static void
-dump_jpeg_stream(const char *subfolder,
+dump_jpeg_stream(
                  const uint8_t *data,
                  size_t size,
-                 int64_t tile_col, int64_t tile_row)
+                 const char *res_folder,
+                 int64_t tile_col, int64_t tile_row, int level)
 {
-    char filename[256];
+    char path[256];
+    struct stat st = {0};
 
-    snprintf(filename,
-             sizeof(filename),
-             "0_0/%"PRId64"_%"PRId64".jpg",
-             tile_row, tile_col);
+    // Create res_folder
+    if (stat(res_folder, &st) == -1) {
+        if (mkdir(res_folder, 0777) == -1) {
+            perror("mkdir res_folder");
+            return;
+        }
+    }
 
-    FILE *f = fopen(filename, "wb");
+    // Create res_folder/level
+    snprintf(path, sizeof(path), "%s/%d", res_folder, level);
+    if (stat(path, &st) == -1) {
+        if (mkdir(path, 0777) == -1) {
+            perror("mkdir level");
+            return;
+        }
+    }
 
+    // Create res_folder/level/tile_col
+    snprintf(path, sizeof(path), "%s/%d/%" PRId64, res_folder, level, tile_col);
+    if (stat(path, &st) == -1) {
+        if (mkdir(path, 0777) == -1) {
+            perror("mkdir tile_col");
+            return;
+        }
+    }
+
+    // Write file
+    snprintf(path, sizeof(path), "%s/%d/%" PRId64 "/%" PRId64 ".jpg",
+             res_folder, level, tile_col, tile_row);
+
+    FILE *f = fopen(path, "wb");
     if (!f) {
+        perror("fopen");
         return;
     }
 
@@ -279,12 +312,6 @@ static bool jpeg_random_access_src(j_decompress_ptr cinfo,
     buffer[size_offset + 2] = (width >> 8) & 0xFF;
     buffer[size_offset + 3] = width & 0xFF;
 
-    dump_jpeg_stream(
-        "0_0",
-        buffer,
-        buffer_size,
-        tile_col, tile_row
-    );
   }
 
 
@@ -754,7 +781,9 @@ static bool jpeg_write_tiles(openslide_t *osr,
 
   for (int32_t tileno = 0; tileno < total_tiles; tileno++) {
     int64_t start_pos, stop_pos;
-
+    if (!compute_mcu_start(osr, jpeg, infile, tileno, &start_pos, &stop_pos, err)) {
+      goto cleanup;
+    }
     const int64_t data_length = (start_pos != -1) ? (stop_pos - start_pos) : 0;
     tile_idx = tileno % jpeg->tiles_across / n_seg_x;
     tile_size[tile_idx] += data_length;
@@ -825,7 +854,7 @@ static bool jpeg_write_tiles(openslide_t *osr,
 
         tile_buf[tile_idx][tile_size_cursor[tile_idx] - 1] = JPEG_EOI;
 
-        dump_jpeg_stream("patch", tile_buf[tile_idx], tile_size_cursor[tile_idx], tile_idx, strip_num);
+        dump_jpeg_stream(tile_buf[tile_idx], tile_size_cursor[tile_idx], "result", tile_idx, strip_num, 0);
         g_free(tile_buf[tile_idx]);
         tile_buf[tile_idx] = NULL;
         tile_size[tile_idx] = 0;
