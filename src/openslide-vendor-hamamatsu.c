@@ -696,133 +696,6 @@ static bool read_from_jpeg(openslide_t *osr,
   }
 }
 
-
-/*static bool jpeg_write_tiles(openslide_t *osr,
-                           struct _openslide_level *level,
-                           int64_t width, int64_t height,
-                           void *arg G_GNUC_UNUSED,
-                           GError **err)
-{
-  struct jpeg_level *l = (struct jpeg_level *)level;
-
-  const int32_t tw = l->tile_width;
-  const int32_t th = l->tile_height;
-  const int32_t n_x = (int32_t)(width / tw);
-  const int32_t n_y = (int32_t)(height / th);
-  const int32_t tiles_per_patch = n_x * n_y;
-  const struct jpeg *jpeg = l->jpegs[0]; // TODO: handle multiple jpegs
-
-  printf("Tile size: %dx%d, Tiles across: %d, Tiles down: %d, jpeg across: %d, jpeg down: %d, scale denominator: %d\n",
-         l->tile_width, l->tile_height,
-         l->tiles_across, l->tiles_down,
-         l->jpegs_across, l->jpegs_down, l->scale_denom);
-
-  printf("Tiles across jpeg: %d x %d , jpeg size: %d x %d\n",
-         jpeg->tiles_across, jpeg->tiles_down,
-         (int)jpeg->width, (int)jpeg->height);
-
-  // Pre-allocate arrays for tile data (moved out of loops)
-    printf("n_x: %d, n_y: %d, tiles_per_patch: %d\n", n_x, n_y, tiles_per_patch);
-
-  bool success = false;
-  g_autoptr(_openslide_file) infile = _openslide_fopen(jpeg->filename, err);
-  if (!infile) {
-    goto cleanup;
-  }
-  // Process each patch
-  for (int32_t i = 0; i * width < jpeg->width / l->scale_denom; i++) {
-    for (int32_t j = 0; j * height < jpeg->height / l->scale_denom; j++) {
-      int64_t total_data_size = 0;
-      JOCTET *full_buffer = NULL;
-      JOCTET **tile_buffers = g_new(JOCTET *, tiles_per_patch);
-      int64_t *tile_sizes = g_new(int64_t, tiles_per_patch);
-
-
-
-      // ===== PHASE 1: Read all tiles for this patch =====
-      for (int32_t n = 0; n < n_y; n++) {
-        for (int32_t m = 0; m < n_x; m++) {
-          const int inner_index = n * n_x + m;
-          const int32_t jpeg_col = i * n_x + m;
-          const int32_t jpeg_row = j * n_y + n;
-          const int32_t tileno = jpeg_col + jpeg_row * jpeg->tiles_across;
-
-          //printf("Reading tile: col=%d, row=%d, tileno=%d inner_index=%d\n", jpeg_col, jpeg_row, tileno, inner_index);
-
-          int64_t start_pos, stop_pos;
-          if (!compute_mcu_start(osr, jpeg, infile, tileno, &start_pos, &stop_pos, err)) {
-            goto cleanup;
-          }
-
-          // Calculate and allocate tile buffer
-          const int data_length = (start_pos != -1) ? (stop_pos - start_pos) : 0;
-          tile_buffers[inner_index] = g_malloc(data_length);
-          tile_sizes[inner_index] = data_length;
-
-          total_data_size += data_length;
-
-          if (data_length > 0) {
-            if (!_openslide_fseek(infile, start_pos, SEEK_SET, err) ||
-                !_openslide_fread_exact(infile, tile_buffers[inner_index], data_length, err)) {
-              g_prefix_error(err, "Failed to read tile data at position %" PRId64 ": ", start_pos);
-              goto cleanup;
-            }
-            // Validate and set restart marker
-            if (tile_buffers[inner_index][data_length - 2] != 0xFF) {
-              g_set_error(err, OPENSLIDE_ERROR, OPENSLIDE_ERROR_FAILED,
-                         "Expected 0xFF byte at end of JPEG data");
-              goto cleanup;
-            }
-          }
-        }
-      }
-
-      // ===== PHASE 2: Build full JPEG buffer =====
-      const int64_t header_length = jpeg->header_length;
-      const int64_t full_size = header_length + total_data_size;
-      const uint8_t *const header_data = jpeg->header_data;
-
-      full_buffer = g_malloc(full_size);
-
-      // Copy header
-      memcpy(full_buffer, header_data, header_length);
-
-      // Concatenate all tile data
-      int64_t offset = header_length;
-      for (int p = 0; p < tiles_per_patch; p++) {
-        if (tile_sizes[p] > 0) {
-          tile_buffers[p][tile_sizes[p] - 1] = 0xD0 + (p % 8);
-          memcpy(full_buffer + offset, tile_buffers[p], tile_sizes[p]);
-          offset += tile_sizes[p];
-          g_free(tile_buffers[p]);
-        }
-      }
-
-      // Update SOF dimensions to 2048x2048
-      const int64_t sof_offset = jpeg->header_sof_offset + 5;
-      full_buffer[sof_offset + 0] = (width >> 8) & 0xFF;
-      full_buffer[sof_offset + 1] = width & 0xFF;
-      full_buffer[sof_offset + 2] = (height >> 8) & 0xFF;
-      full_buffer[sof_offset + 3] = height & 0xFF;
-
-      // Add EOI marker
-      full_buffer[full_size - 1] = JPEG_EOI;
-
-      dump_jpeg_stream("patch", full_buffer, full_size, i, j);
-      g_free(full_buffer);
-      // Tile buffers are automatically freed by jpeg memory manager
-      // when their decompression contexts go out of scope
-    }
-  }
-
-
-  success = true;
-
-cleanup:
-  //g_free(tile_buffers);
-  //g_free(full_buffer);
-  return success;
-}*/
 static bool jpeg_write_tiles(openslide_t *osr,
                            struct _openslide_level *level,
                            int64_t req_width, int64_t req_height,
@@ -831,18 +704,25 @@ static bool jpeg_write_tiles(openslide_t *osr,
 {
   struct jpeg_level *l = (struct jpeg_level *)level;
   struct jpeg *jpeg = l->jpegs[0];
-  const int64_t sof_offset = jpeg->header_sof_offset + 5;
-  const int32_t jpeg_width = jpeg->width / l->scale_denom;
-  const int32_t jpeg_height = jpeg->height / l->scale_denom;
+  int64_t total_tiles = l->tiles_across * l->tiles_down;
 
-  const int32_t seg_w = l->tile_width;
-  const int32_t seg_h = l->tile_height;
+  printf("JPEG level: %dx%d, %dx%d tiles, %d total tiles\n",
+         l->jpegs_across, l->jpegs_down,
+         l->tiles_across, l->tiles_down,
+         total_tiles);
+
+  const int64_t sof_offset = jpeg->header_sof_offset + 5;
+  const int32_t level_width = l->tiles_across * l->tile_width;
+  const int32_t level_height = l->tiles_down * l->tile_height;
+  const int32_t seg_w = l->tile_width * l->scale_denom;
+  const int32_t seg_h = l->tile_height * l->scale_denom;
+
   const int32_t n_seg_y = req_height / seg_h > 0 ? req_height / seg_h : 1;
   const int32_t n_seg_x = req_width / seg_w > 0 ? req_width / seg_w : 1;
   const int32_t tile_width = seg_w * n_seg_x;
   const int32_t tile_height = seg_h * n_seg_y;
-  const int32_t last_tile_height = jpeg_height % (tile_height) > 0 ? jpeg_height % (tile_height) : seg_h;
-  const int32_t last_tile_width = jpeg_width % (tile_width) > 0 ? jpeg_width % (tile_width) : seg_w;
+  const int32_t last_tile_height = level_height % (tile_height) > 0 ? level_height % (tile_height) : seg_h;
+  const int32_t last_tile_width = level_width % (tile_width) > 0 ? level_width % (tile_width) : seg_w;
 
   // Buffer for a single strip: tiles_across wide, n_y tall
   const int32_t segments_in_batch = jpeg->tiles_across * n_seg_y;
@@ -851,7 +731,7 @@ static bool jpeg_write_tiles(openslide_t *osr,
 
   printf("Requested size: %dx%d, actual size: %dx%d from segments of size %dx%d\n", req_width, req_height, tile_width, tile_height, seg_w, seg_h);
   printf("Splitting %dx%d image into tiles of size %dx%d, with %d segments per batch and %d batches\n",
-         jpeg_width, jpeg_height, tile_width, tile_height, segments_in_batch, batch_size);
+         level_width, level_height, tile_width, tile_height, segments_in_batch, batch_size);
 
   bool success = false;
   g_autoptr(_openslide_file) infile = _openslide_fopen(jpeg->filename, err);
@@ -869,13 +749,12 @@ static bool jpeg_write_tiles(openslide_t *osr,
 
   int64_t tile_idx;
 
+
   printf("tile per strip: %d, batch_size: %d\n", segments_in_batch, batch_size);
 
-  for (int32_t tileno = 0; tileno < jpeg->tile_count; tileno++) {
+  for (int32_t tileno = 0; tileno < total_tiles; tileno++) {
     int64_t start_pos, stop_pos;
-    if (!compute_mcu_start(osr, jpeg, infile, tileno, &start_pos, &stop_pos, err)) {
-      goto cleanup;
-    }
+
     const int64_t data_length = (start_pos != -1) ? (stop_pos - start_pos) : 0;
     tile_idx = tileno % jpeg->tiles_across / n_seg_x;
     tile_size[tile_idx] += data_length;
@@ -899,7 +778,7 @@ static bool jpeg_write_tiles(openslide_t *osr,
     const int32_t strip_num = row / n_seg_y;
 
     // Check if we've completed this strip
-    const bool is_end_img = (tileno == jpeg->tile_count - 1);
+    const bool is_end_img = (tileno == total_tiles - 1);
     const bool is_end_batch = (tileno % segments_in_batch) == (segments_in_batch - 1);
     if (is_end_img || is_end_batch) {
       // allocate full_buffer for each image we will output
