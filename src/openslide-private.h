@@ -277,7 +277,7 @@ typedef bool (*_openslide_grid_range_read_fn)(openslide_t *osr,
 typedef bool (*_openslide_grid_simple_write_fn)(openslide_t *osr,
                                                char *folder_path,
                                                struct _openslide_level *level,
-                                               int64_t tile_col, int64_t tile_row,
+                                               int32_t width, int32_t height,
                                                void *arg,
                                                GError **err);
 

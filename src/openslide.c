@@ -567,11 +567,10 @@ void openslide_read_region(openslide_t *osr,
 void openslide_write_tiles(openslide_t *osr,
         char *folder_path,
 			  int32_t level,
-			  int64_t w, int64_t h) {
+			  int32_t w, int32_t h) {
 
   GError *tmp_err = NULL;
   osr->ops->write_tiles(osr, folder_path, osr->levels[level], w, h, &tmp_err);
-
 }
 
 const char * const *openslide_get_property_names(openslide_t *osr) {

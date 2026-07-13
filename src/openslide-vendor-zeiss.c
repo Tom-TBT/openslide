@@ -563,9 +563,19 @@ static bool paint_region(openslide_t *osr, cairo_t *cr,
                                       level, w, h, err);
 }
 
+static bool write_raw_tiles(openslide_t *osr,
+                           char *folder_path,
+                           struct _openslide_level *level,
+                           int32_t req_width, int32_t req_height,
+                           GError **err) {
+  g_message("Writing the raw tiles is not yet supported for Zeiss files\n");
+  return false;
+}
+
 static const struct _openslide_ops zeiss_ops = {
   .paint_region = paint_region,
   .destroy = destroy,
+  .write_tiles = write_raw_tiles,
 };
 
 static bool get_associated_image_data(struct _openslide_associated_image *_img,

@@ -362,9 +362,19 @@ static void destroy(openslide_t *osr) {
   g_free(data);
 }
 
+static bool write_raw_tiles(openslide_t *osr,
+                           char *folder_path,
+                           struct _openslide_level *level,
+                           int32_t req_width, int32_t req_height,
+                           GError **err) {
+  g_message("Writing the raw tiles is not yet supported for Mirax files\n");
+  return false;
+}
+
 static const struct _openslide_ops mirax_ops = {
   .paint_region = paint_region,
   .destroy = destroy,
+  .write_tiles = write_raw_tiles
 };
 
 static bool mirax_detect(const char *filename, struct _openslide_tifflike *tl,

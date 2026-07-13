@@ -749,6 +749,15 @@ static bool jpeg_paint_region(openslide_t *osr, cairo_t *cr,
   return success;
 }
 
+static bool write_raw_tiles(openslide_t *osr,
+                           char *folder_path,
+                           struct _openslide_level *level,
+                           int32_t req_width, int32_t req_height,
+                           GError **err) {
+  g_message("Writing the raw tiles is not yet supported for Hamamatsu files\n");
+  return false;
+}
+
 static void jpeg_do_destroy(openslide_t *osr) {
   struct hamamatsu_jpeg_ops_data *data = osr->data;
 
@@ -795,6 +804,7 @@ static void jpeg_do_destroy(openslide_t *osr) {
 static const struct _openslide_ops hamamatsu_jpeg_ops = {
   .paint_region = jpeg_paint_region,
   .destroy = jpeg_do_destroy,
+  .write_tiles = write_raw_tiles
 };
 
 static bool hamamatsu_vms_vmu_detect(const char *filename,
@@ -1236,7 +1246,7 @@ static void create_scaled_jpeg_levels(openslide_t *osr,
                                                  sd_l->tile_width,
                                                  sd_l->tile_height,
                                                  read_jpeg_tile,
-                                                 NULL);  // No write_tile for now
+                                                 write_raw_tiles);  // No write_tile for now
 
       key = g_new(int64_t, 1);
       *key = sd_l->base.w;
@@ -1382,7 +1392,7 @@ static struct jpeg_level *create_jpeg_level(openslide_t *osr,
                                           l->tiles_across, l->tiles_down,
                                           l->tile_width, l->tile_height,
                                           read_jpeg_tile,
-                                          NULL);  // No write_tile for now
+                                          write_raw_tiles);  // No write_tile for now
 
   return l;
 }
@@ -1704,7 +1714,7 @@ static bool hamamatsu_vmu_part2(openslide_t *osr,
                                             l->column_width,
                                             NGR_TILE_HEIGHT,
                                             ngr_read_tile,
-                                            NULL);  // No write_tile for now
+                                            write_raw_tiles);  // No write_tile for now
 
     // tile size hints
     l->base.tile_w = l->column_width;

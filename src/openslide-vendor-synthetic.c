@@ -362,9 +362,19 @@ static bool paint_region(openslide_t *osr G_GNUC_UNUSED, cairo_t *cr,
                                       err);
 }
 
+static bool write_raw_tiles(openslide_t *osr,
+                           char *folder_path,
+                           struct _openslide_level *level,
+                           int32_t req_width, int32_t req_height,
+                           GError **err) {
+  g_message("Writing the raw tiles is not yet supported for Synthetic files\n");
+  return false;
+}
+
 static const struct _openslide_ops synthetic_ops = {
   .paint_region = paint_region,
   .destroy = destroy,
+  .write_tiles = write_raw_tiles,
 };
 
 static bool synthetic_detect(const char *filename,

@@ -205,7 +205,7 @@ OPENSLIDE_PUBLIC()
 void openslide_write_tiles(openslide_t *osr,
 			  char *folder_path,
 			  int32_t level,
-			  int64_t w, int64_t h);
+			  int32_t w, int32_t h);
 
 /**
  * Get the size in bytes of the ICC color profile for the whole slide image.

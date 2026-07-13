@@ -561,10 +561,20 @@ static bool read_icc_profile(openslide_t *osr, void *dest,
   return true;
 }
 
+static bool write_raw_tiles(openslide_t *osr,
+                           char *folder_path,
+                           struct _openslide_level *level,
+                           int32_t req_width, int32_t req_height,
+                           GError **err) {
+  g_message("Writing the raw tiles is not yet supported for DICOM files\n");
+  return false;
+}
+
 static const struct _openslide_ops dicom_ops = {
   .paint_region = paint_region,
   .read_icc_profile = read_icc_profile,
   .destroy = destroy,
+  .write_tiles = write_raw_tiles,
 };
 
 static bool dicom_detect(const char *filename, struct _openslide_tifflike *tl,
