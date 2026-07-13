@@ -793,6 +793,7 @@ static bool write_raw_tiles(openslide_t *osr,
                            char *folder_path,
                            struct _openslide_level *level,
                            int32_t req_width, int32_t req_height,
+                           void *arg,
                            GError **err) {
   struct jpeg_level *l = (struct jpeg_level *)level;
   struct jpeg *jpeg = l->jpegs[0];

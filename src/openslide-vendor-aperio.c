@@ -252,13 +252,76 @@ static bool read_icc_profile(openslide_t *osr, void *dest, GError **err) {
                                           dest, osr->icc_profile_size, err);
 }
 
+#include <inttypes.h>
+#include <sys/stat.h>
+static void write_file(const uint8_t *data,
+                       size_t size,
+                       const char *res_folder,
+                       int32_t tile_col, int32_t tile_row) {
+    char path[256];
+    struct stat st = {0};
+
+    // Create res_folder
+    if (stat(res_folder, &st) == -1) {
+        if (mkdir(res_folder, 0777) == -1) {
+            perror("mkdir res_folder");
+            return;
+        }
+    }
+
+    // Create res_folder/level/tile_row
+    snprintf(path, sizeof(path), "%s/%" PRId32, res_folder, tile_row);
+    if (stat(path, &st) == -1) {
+        if (mkdir(path, 0777) == -1) {
+            perror("mkdir tile_row");
+            return;
+        }
+    }
+
+    // Write file
+    snprintf(path, sizeof(path), "%s/%" PRId32 "/%" PRId32,
+             res_folder, tile_row, tile_col);
+
+    FILE *f = fopen(path, "wb");
+    if (!f) {
+        perror("fopen");
+        return;
+    }
+
+    fwrite(data, 1, size, f);
+    fclose(f);
+}
+
 static bool write_raw_tiles(openslide_t *osr,
                            char *folder_path,
                            struct _openslide_level *level,
                            int32_t req_width, int32_t req_height,
+                           void *arg,
                            GError **err) {
-  g_message("Writing the raw tiles is not yet supported for Aperio files\n");
-  return false;
+  struct aperio_ops_data *data = osr->data;
+  struct level *l = (struct level *) level;
+  struct _openslide_tiff_level *tiffl = &l->tiffl;
+  g_auto(_openslide_cached_tiff) ct = _openslide_tiffcache_get(data->tc, err);
+  if (ct.tiff == NULL) {
+    return false;
+  }
+
+  for (int64_t tile_row = 0; tile_row < tiffl->tiles_down; tile_row++) {
+    for (int64_t tile_col = 0; tile_col < tiffl->tiles_across; tile_col++) {
+      g_autofree void *buf = NULL;
+      int32_t buflen;
+      if (!_openslide_tiff_read_tile_data(tiffl, ct.tiff,
+                                      &buf, &buflen,
+                                      tile_col, tile_row,
+                                      err)) {
+        return false;
+      }
+
+      write_file(buf, buflen, folder_path, tile_col, tile_row);
+    }
+  }
+
+  return true;
 }
 
 static const struct _openslide_ops aperio_ops = {
@@ -471,7 +534,7 @@ static bool aperio_open(openslide_t *osr,
                                               tiffl->tile_w,
                                               tiffl->tile_h,
                                               read_tile,
-                                              NULL);  // No write_tile for now
+                                              write_raw_tiles);
 
       // get compression
       if (!TIFFGetField(ct.tiff, TIFFTAG_COMPRESSION, &l->compression)) {
