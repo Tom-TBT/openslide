@@ -208,6 +208,8 @@ int main(int argc, char **argv) {
     cmd = &show_properties_cmd;
   } else if (g_str_equal(cmd_name, "openslide-write-png")) {
     cmd = &write_png_cmd;
+  } else if (g_str_equal(cmd_name, "openslide-write-tiles")) {
+    cmd = &write_tiles_cmd;
   }
   return invoke_cmdline(cmd, "", argc, argv);
 }
