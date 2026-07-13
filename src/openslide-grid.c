@@ -90,6 +90,7 @@ struct simple_grid {
   int64_t tiles_down;
   uint64_t *tiles_missing;
   _openslide_grid_simple_read_fn read_tile;
+  _openslide_grid_simple_write_fn write_tile;
 };
 
 struct tilemap_grid {
@@ -441,7 +442,8 @@ struct _openslide_grid *_openslide_grid_create_simple(openslide_t *osr,
                                                       int64_t tiles_down,
                                                       int32_t tile_w,
                                                       int32_t tile_h,
-                                                      _openslide_grid_simple_read_fn read_tile) {
+                                                      _openslide_grid_simple_read_fn read_tile,
+                                                      _openslide_grid_simple_write_fn write_tile) {
   struct simple_grid *grid = g_new0(struct simple_grid, 1);
   grid->base.osr = osr;
   grid->base.ops = &simple_grid_ops;
@@ -450,6 +452,7 @@ struct _openslide_grid *_openslide_grid_create_simple(openslide_t *osr,
   grid->tiles_across = tiles_across;
   grid->tiles_down = tiles_down;
   grid->read_tile = read_tile;
+  grid->write_tile = write_tile;
   return (struct _openslide_grid *) grid;
 }
 

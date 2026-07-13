@@ -251,7 +251,8 @@ static bool generic_tiff_open(openslide_t *osr,
                                             tiffl->tiles_down,
                                             tiffl->tile_w,
                                             tiffl->tile_h,
-                                            read_tile);
+                                            read_tile,
+                                            NULL);  // No write_tile for now
     // TIFF doesn't allow missing tiles, but WSI-derived TIFFs might have them
     if (!_openslide_tiff_missing_tiles_to_simple_grid(tiffl, ct.tiff, l->grid,
                                                       err)) {

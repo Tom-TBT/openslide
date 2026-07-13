@@ -1235,7 +1235,8 @@ static void create_scaled_jpeg_levels(openslide_t *osr,
                                                  sd_l->tiles_down,
                                                  sd_l->tile_width,
                                                  sd_l->tile_height,
-                                                 read_jpeg_tile);
+                                                 read_jpeg_tile,
+                                                 NULL);  // No write_tile for now
 
       key = g_new(int64_t, 1);
       *key = sd_l->base.w;
@@ -1380,7 +1381,8 @@ static struct jpeg_level *create_jpeg_level(openslide_t *osr,
   l->grid = _openslide_grid_create_simple(osr,
                                           l->tiles_across, l->tiles_down,
                                           l->tile_width, l->tile_height,
-                                          read_jpeg_tile);
+                                          read_jpeg_tile,
+                                          NULL);  // No write_tile for now
 
   return l;
 }
@@ -1701,7 +1703,8 @@ static bool hamamatsu_vmu_part2(openslide_t *osr,
                                             / NGR_TILE_HEIGHT,
                                             l->column_width,
                                             NGR_TILE_HEIGHT,
-                                            ngr_read_tile);
+                                            ngr_read_tile,
+                                            NULL);  // No write_tile for now
 
     // tile size hints
     l->base.tile_w = l->column_width;

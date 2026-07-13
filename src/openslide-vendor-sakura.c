@@ -839,7 +839,8 @@ static bool sakura_open(openslide_t *osr, const char *filename,
       l->grid = _openslide_grid_create_simple(osr,
                                               tiles_across, tiles_down,
                                               tile_size, tile_size,
-                                              read_tile);
+                                              read_tile,
+                                              NULL);  // No write_tile for now
       int64_t *downsample_val = g_new(int64_t, 1);
       *downsample_val = downsample;
       g_hash_table_insert(level_hash, downsample_val, l);
